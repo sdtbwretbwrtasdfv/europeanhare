@@ -84,7 +84,7 @@ function fireup(){
 	local headers_check_rules=""
 	clonned_domain=$(echo $site_to_clone | sed 's/https:\/\///'| sed 's/http:\/\/// ')
 	config_1="server {\n"
-	config_1+="\tlisten 443 ssl;\n"
+	config_1+="\tlisten 0.0.0.0:443 ssl;\n"
 	config_1+="\tserver_name $domain;\n\n"
 	config_1+="\troot /opt/sites/$clonned_domain/;\n\n"
 	config_1+="\tssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;\n"
