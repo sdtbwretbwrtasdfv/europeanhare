@@ -1,15 +1,12 @@
 # EUROPEANHARE - HTTPS Redirector
 
-This is a Bash script that creates an HTTPS redirector using NGINX web server and Certbot SSL certificates. The redirector proxies incoming requests to a Command and Control (C2) server, only if the requests meet specific criteria defined in the script.
-
-## Prerequisites
-
-The script is designed to be run on a Linux operating system, and assumes that you have root privileges. You must have the following software installed before running the script:
-
-- Bash
-- NGINX
-- Certbot
-- Usage
+This is a Bash script that creates an HTTPS redirector using NGINX web server and Certbot SSL certificates. 
+The redirector proxies incoming https requests to a Command and Control (C2) server, only if the requests meet specific criteria. 
+Following check includeds:
+- Check URLs
+- Check headers
+- Chack headers values
+- Check client IP
 
 ## Configuration
 The script will guide you through the configuration process, which includes:
