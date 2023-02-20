@@ -20,7 +20,6 @@ function show_banner() {
   echo -e "${RED}==============================================================================================${NC}"
 
 }
-
 function update_system() {
 	echo ""
 	echo -e "${RED}[+] UPDATING SYSTEM...${NC}"
@@ -34,11 +33,11 @@ function install_nginx() {
 
 }
 function stop_nginx() {
-	echo -e "${RED}[+] STOPPING NGINX AND BACKING UP CONFIGURATION FILES...${NC}\n"
+	echo -e "${RED}[+] STOPPING NGINX...${NC}\n"
 	service nginx stop
 	now=$(date +"%s")
-	mv /etc/nginx/sites-enabled/ /etc/nginx/sites-enabled_bak_${now}/
-	mkdir /etc/nginx/sites-enabled
+	if [ ! -d /etc/nginx/sites-enabled ]; then mkdir /etc/nginx/sites-enabled; fi
+	if [ ! -d /etc/nginx/sites-available ]; then mkdir /etc/nginx/sites-available; fi
 }
 function cert_get() {
 	echo -e "${RED}[+] GETTING SSL CERTIFICATES WITH CERTBOT...${NC}"
@@ -136,14 +135,14 @@ function fireup(){
 
 	echo -e $resulting_config >> tmp_config
 
-	if [ -f /etc/nginx/sites-available/$domain ]; then rm /etc/nginx/sites-available/$domain; fi
-	if [ -f /etc/nginx/sites-enabled/$domain ]; then rm /etc/nginx/sites-enabled/$domain; fi
-	mv tmp_config /etc/nginx/sites-available/$domain
-	sudo ln -s /etc/nginx/sites-available/$domain /etc/nginx/sites-enabled/
+	#if [ -f /etc/nginx/sites-available/$domain ]; then rm /etc/nginx/sites-available/$domain; fi
+	#if [ -f /etc/nginx/sites-enabled/$domain ]; then rm /etc/nginx/sites-enabled/$domain; fi
+	mv tmp_config $full_path_to_config
+	sudo ln -s $full_path_to_config /etc/nginx/sites-enabled/
 
 	echo -e "${RED}\n==============================================================================================${NC}"
 	echo -e "${RED}NGINX CONFIGURATION FILE GENERATED:${YELLOW}"
-	cat /etc/nginx/sites-enabled/$domain
+	cat $full_path_to_config
 	echo -e "${NC}"
 	echo -e "${RED}==============================================================================================${NC}"
 	echo -e "${NC}(C2)${RED}$c2_ip${NC}:${RED}$c2_port${NC}<---${RED}$C2_proto${NC}---(Current host)${RED}$domain${NC}:${RED}$redirector_port${NC}<---${RED}SSL${NC}---(Client)${RED}"
@@ -158,8 +157,8 @@ function fireup(){
 	done
 	echo -e "\n${RED}\nWEB SERVICE TO MIMICRY:${NC}$site_to_clone\n"
 
-	echo -e "${RED}NGINX CONFIG REAL FILE PATH:${NC}/etc/nginx/sites-available/$domain"
-	echo -e "${RED}NGINX CONFIG LINK PATH:${NC}/etc/nginx/sites-enabled/$domain"
+	echo -e "${RED}NGINX CONFIG REAL FILE PATH:${NC}$full_path_to_config"
+	echo -e "${RED}NGINX CONFIG LINK PATH:${NC}$full_path_to_config_enable"
 	echo -e "${RED}PATH TO SSL KEY:${NC}/etc/letsencrypt/live/$domain/privkey.pem"
 	echo -e "${RED}PATH TO SSL CERT:${NC}/etc/letsencrypt/live/$domain/fullchain.pem"
 	echo -e "${RED}\n==============================================================================================${NC}"
@@ -187,7 +186,6 @@ function list_ips(){
 	  echo -e "${RED}$((i+1)).${NC}${accepted_ips[$i]}"
 	done
 }
-
 function showmenu(){
 	while true; do
 	  echo ""
@@ -214,7 +212,7 @@ function showmenu(){
 	  esac
 	done
 }
-function main() {
+function add_redirector() {
 	show_banner
 	echo ""
 	update_system
@@ -224,14 +222,12 @@ function main() {
 		read c2_ip
 	echo -e -n "${RED}ENTER C2 SERVER PORT: ${NC}"
 		read c2_port
-
-
 	while true; do
 		echo -e -n "${RED}C2 PORT USING SLL? (http or https): ${NC}"
 			read answer
 		if [[ "$answer" == "http" ]]; then
 			C2_proto="http"
-			ssl_nginx_check="ssl"
+			ssl_nginx_check=""
 			break
 		elif [[ "$answer" == "https" ]]; then
 			C2_proto="https"
@@ -241,14 +237,86 @@ function main() {
 			echo "Invalid input: please enter either 'http' or 'https'"
 		fi
 	done
-
-
 	echo -e -n "${RED}ENTER DOMAIN NAME THAT POINTS TO CURRENT SERVER: ${NC}"
 		read domain
 	echo -e -n "${RED}ENTER REDIRECTOR PORT: ${NC}"
 		read redirector_port
+	full_path_to_config="/etc/nginx/sites-available/"$c2_ip"_"$c2_port"_"$C2_proto"_"$domain"_"$redirector_port
+	full_path_to_config_enable="/etc/nginx/sites-enabled/"$c2_ip"_"$c2_port"_"$C2_proto"_"$domain"_"$redirector_port
+
 	cert_get
 	showmenu
 }
+function list_redirectors() {
+	files=($(find /etc/nginx/sites-enabled/ -maxdepth 1 -type l))
+	num_files=${#files[@]}
 
+	if [ $num_files -eq 0 ]; then
+		echo -e "${RED}NO REDIRECTORS FOUND${NC}"
+	else
+		echo -e "${RED}NUMBER OF CONFIGS: ${NC}$num_files"
+		for config_file in "${files[@]}"; do
+			echo "------------------------------"
+			echo -e "${RED}REDIRECTOR: ${NC}$config_file"
+			grep -E "listen\s+\S+:\S+" "$config_file" | awk '{print "Port: "$2}'
+			grep -E "server_name\s+\S+;" "$config_file" | awk '{print "Hostname: "$2}'
+			grep -E "proxy_pass\s+\S+;" "$config_file" | awk '{print "Proxy Pass: "$2}'
+			allow_lines=$(grep -E "allow\s+" "$config_file")
+			if [ -z "$allow_lines" ]; then
+				echo -e "${RED}No allow lines found.${NC}"
+			else
+				echo -e "${RED}ALLOW LINES:${NC}"
+				echo "$allow_lines"
+			fi
+
+			echo "------------------------------"
+		done
+	fi
+}
+
+
+function del_redirector() {
+	options=()
+	while IFS= read -r -d '' filename; do
+		options+=("$filename")
+	done < <(find /etc/nginx/sites-enabled/ -type l -print0)
+	if [[ "${#options[@]}" -eq 0 ]]; then
+		echo -e "${RED}NO REDIRECTORS FOUND${NC}"
+		return
+	fi
+	echo -e "${RED}CHOOSE REDIRECTOR TO DELETE:${NC}"
+	select filename in "${options[@]}"; do
+		if [[ -n "$filename" ]]; then
+			echo -e "${RED}ARE YOU SURE YOU WANT TO DELETE ${NC}$filename${RED}? (y/n) ${NC}"
+			read answer
+			if [[ "$answer" == "y" ]]; then
+				sudo rm "$filename"
+				echo -e "${RED}REDIRECTOR DELETED!!!${NC}"
+			else
+				echo -e "${RED}NOTHING DELETED${NC}"
+			fi
+			break
+		else
+			echo -e "${RED}INVALID OPTION: PLEASE SELECT A NUMBER FROM THE LIST${NC}"
+		fi
+	done
+}
+function main(){
+	while true; do
+	  echo ""
+	  echo -e "${RED}SELECT AN OPTION:${NC}"
+	  echo -e "${RED}1.${NC} LIST REDIRECTORS"
+	  echo -e "${RED}2.${NC} ADD REDIRECTOR"
+	  echo -e "${RED}3.${NC} DEL REDIRECTOR"
+	  echo ""
+	  echo -e -n "${RED}ENTER OPTION NUMBER: ${NC}"
+	  	read option
+	  case $option in
+	    1) list_redirectors;;
+	    2) add_redirector;;
+	    3) del_redirector;;
+	    *) echo -e "\n${RED}INVALID OPTION. PLEASE TRY AGAIN.${NC}";;
+	  esac
+	done
+}
 main
