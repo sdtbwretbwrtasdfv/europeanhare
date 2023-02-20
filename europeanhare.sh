@@ -2,7 +2,6 @@
 
 accepted_urls=()
 obligatory_headers=()
-
 GRAY='\033[0;37m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
@@ -90,7 +89,7 @@ function fireup(){
 	local headers_check_rules=""
 	clonned_domain=$(echo $site_to_clone | sed 's/https:\/\///'| sed 's/http:\/\/// ')
 	config_1="server {\n"
-	config_1+="\tlisten 0.0.0.0:443 $ssl_nginx_check;\n"
+	config_1+="\tlisten 0.0.0.0:$redirector_port $ssl_nginx_check;\n"
 	config_1+="\tserver_name $domain;\n\n"
 	config_1+="\troot /opt/sites/$clonned_domain/;\n\n"
 	config_1+="\tssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;\n"
@@ -292,6 +291,8 @@ function del_redirector() {
 			if [[ "$answer" == "y" ]]; then
 				sudo rm "$filename"
 				echo -e "${RED}REDIRECTOR DELETED!!!${NC}"
+				sudo service nginx stop
+				sudo service nginx start
 			else
 				echo -e "${RED}NOTHING DELETED${NC}"
 			fi
