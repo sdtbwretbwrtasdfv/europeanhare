@@ -163,7 +163,7 @@ function fireup(){
 	echo -e "${RED}PATH TO SSL KEY:${NC}/etc/letsencrypt/live/$domain/privkey.pem"
 	echo -e "${RED}PATH TO SSL CERT:${NC}/etc/letsencrypt/live/$domain/fullchain.pem"
 	echo -e "${RED}\n==============================================================================================${NC}"
-	sudo service nginx reload
+	sudo service nginx stop
 	sudo service nginx start
 	sudo service nginx status
 	echo -e "${RED}\n==============================================================================================${NC}"
@@ -231,7 +231,7 @@ function main() {
 			read answer
 		if [[ "$answer" == "http" ]]; then
 			C2_proto="http"
-			ssl_nginx_check=""
+			ssl_nginx_check="ssl"
 			break
 		elif [[ "$answer" == "https" ]]; then
 			C2_proto="https"
