@@ -70,8 +70,15 @@ function add_header() {
 	obligatory_header_values+=("$header_value")
 	echo -e "${RED}NEW HEADER ADDED: ${NC}$new_header ${RED}WITH VALUE ${NC}$header_value"
 }
+function add_ip(){
+	echo -e -n "${RED}ENTER NEW IP TO ACCEPT: ${NC}"
+		read new_ip
+  accepted_ips+=("$new_ip")
+  echo -e "${RED}NEW IP ADDED: ${NC}$new_ip"
+}
 function clone_site(){
-	mkdir /opt/sites
+	if [ ! -d "/opt/sites" ]; then mkdir /opt/sites; fi
+
 	echo -e -n "${RED}PROVIDE SITE TO CLONE: ${NC}"
 	read site_to_clone
 	echo -e "${RED}SITE WILL BE CLONNED TO DIRECTORY${NC} /opt/sites/$domain"
@@ -84,7 +91,7 @@ function fireup(){
 	local headers_check_rules=""
 	clonned_domain=$(echo $site_to_clone | sed 's/https:\/\///'| sed 's/http:\/\/// ')
 	config_1="server {\n"
-	config_1+="\tlisten 0.0.0.0:443 ssl;\n"
+	config_1+="\tlisten 0.0.0.0:443 $ssl_nginx_check;\n"
 	config_1+="\tserver_name $domain;\n\n"
 	config_1+="\troot /opt/sites/$clonned_domain/;\n\n"
 	config_1+="\tssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;\n"
@@ -93,6 +100,13 @@ function fireup(){
 	config_1+="\tssl_session_timeout 10m;\n"
 	config_1+="\tssl_ciphers HIGH:!aNULL:!MD5;\n"
 	config_1+="\tssl_prefer_server_ciphers on;\n"
+
+	for ip_num in "${!accepted_ips[@]}"; do
+		ip_add="${accepted_ips[$ip_num]}"
+		ips_accept_check+="\tallow $ip_add;\n"
+	done
+		ips_accept_check+="\tdeny all;\n\n"
+
 	for i in "${!obligatory_headers[@]}"; do
 		header="${obligatory_headers[$i]}"
 		value="${obligatory_header_values[$i]}"
@@ -102,11 +116,8 @@ function fireup(){
 	done
 	for url in "${accepted_urls[@]}"; do
 		urls_rules+="\tlocation = $url {\n"
-		urls_rules+="\t\tif (\$remote_addr !~ \"$client_ip\") {\n"
-		urls_rules+="\t\t\treturn 403;\n"
-		urls_rules+="\t\t}\n"
 		urls_rules+="$headers_check_rules"
-		urls_rules+="\t\tproxy_pass http://$c2_ip:$c2_port;\n"
+		urls_rules+="\t\tproxy_pass $C2_proto://$c2_ip:$c2_port;\n"
 		urls_rules+="\t\tproxy_set_header Host \$host;\n"
 		urls_rules+="\t\tproxy_set_header X-Real-IP \$remote_addr;\n"
 		urls_rules+="\t\tproxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n"
@@ -115,6 +126,7 @@ function fireup(){
 	done
 	local resulting_config=""
 	resulting_config+="$config_1"
+	resulting_config+="$ips_accept_check"
 	resulting_config+="$urls_rules"
 	resulting_config+="\tlocation / {\n"
 	resulting_config+="\t\troot /opt/sites/$clonned_domain;\n"
@@ -134,7 +146,7 @@ function fireup(){
 	cat /etc/nginx/sites-enabled/$domain
 	echo -e "${NC}"
 	echo -e "${RED}==============================================================================================${NC}"
-	echo -e "${NC}(C2)${RED}$c2_ip${NC}:${RED}$c2_port${NC}<---${RED}SSL${NC}---(Current host)${RED}$domain${NC}:${RED}$redirector_port${NC}<---${RED}SSL${NC}---(Client)${RED}$client_ip${RED}"
+	echo -e "${NC}(C2)${RED}$c2_ip${NC}:${RED}$c2_port${NC}<---${RED}$C2_proto${NC}---(Current host)${RED}$domain${NC}:${RED}$redirector_port${NC}<---${RED}SSL${NC}---(Client)${RED}"
 	echo -e "${RED}==============================================================================================${NC}"
 	echo -e "${RED}\nOBLIGATORY HEADERS:${NC}"
 	for ((i=0; i<${#obligatory_headers[@]}; i++)); do
@@ -169,6 +181,12 @@ function list_headers(){
 	  echo -e "${RED}$((i+1)). ${NC}${obligatory_headers[$i]}: ${obligatory_header_values[$i]}"
 	done
 }
+function list_ips(){
+	echo -e "${RED}\nACCEPTED IPS:${NC}"
+	for ((i=0; i<${#accepted_ips[@]}; i++)); do
+	  echo -e "${RED}$((i+1)).${NC}${accepted_ips[$i]}"
+	done
+}
 
 function showmenu(){
 	while true; do
@@ -176,18 +194,22 @@ function showmenu(){
 	  echo -e "${RED}SELECT AN OPTION:${NC}"
 	  echo -e "${RED}1.${NC} LIST ACCEPTED URLS"
 	  echo -e "${RED}2.${NC} LIST ACCEPTED HEADERS"
-	  echo -e "${RED}3.${NC} ADD ACCEPTED URL"
-	  echo -e "${RED}4.${NC} ADD OBLIGATORY HEADER"
-	  echo -e "${RED}5.${NC} FIREUP!!!"
+	  echo -e "${RED}3.${NC} LIST ACCEPTED IPS"
+	  echo -e "${RED}4.${NC} ADD ACCEPTED URL"
+	  echo -e "${RED}5.${NC} ADD OBLIGATORY HEADER"
+	  echo -e "${RED}6.${NC} ADD ACCEPTED IPS"
+	  echo -e "${RED}7.${NC} FIREUP!!!"
 	  echo ""
 	  echo -e -n "${RED}ENTER OPTION NUMBER: ${NC}"
 	  	read option
 	  case $option in
 	    1) list_urls;;
 	    2) list_headers;;
-	    3) add_url;;
-	    4) add_header;;
-	    5) clone_site && fireup;;
+	    3) list_ips;;
+	    4) add_url;;
+	    5) add_header;;
+	    6) add_ip;;
+	    7) clone_site && fireup;;
 	    *) echo -e "\n${RED}INVALID OPTION. PLEASE TRY AGAIN.${NC}";;
 	  esac
 	done
@@ -202,12 +224,29 @@ function main() {
 		read c2_ip
 	echo -e -n "${RED}ENTER C2 SERVER PORT: ${NC}"
 		read c2_port
+
+
+	while true; do
+		echo -e -n "${RED}C2 PORT USING SLL? (http or https): ${NC}"
+			read answer
+		if [[ "$answer" == "http" ]]; then
+			C2_proto="http"
+			ssl_nginx_check=""
+			break
+		elif [[ "$answer" == "https" ]]; then
+			C2_proto="https"
+			ssl_nginx_check="ssl"
+			break
+		else
+			echo "Invalid input: please enter either 'http' or 'https'"
+		fi
+	done
+
+
 	echo -e -n "${RED}ENTER DOMAIN NAME THAT POINTS TO CURRENT SERVER: ${NC}"
 		read domain
 	echo -e -n "${RED}ENTER REDIRECTOR PORT: ${NC}"
 		read redirector_port
-	echo -e -n "${RED}ENTER CLIENT IP RANGE (IN CIDR NOTATION): ${NC}"
-		read client_ip
 	cert_get
 	showmenu
 }
