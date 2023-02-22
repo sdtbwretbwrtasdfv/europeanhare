@@ -76,13 +76,23 @@ function add_ip(){
 }
 function clone_site(){
 	if [ ! -d "/opt/sites" ]; then mkdir /opt/sites; fi
-
-	echo -e -n "${RED}PROVIDE SITE TO CLONE: ${NC}"
-	read site_to_clone
-	echo -e "${RED}SITE WILL BE CLONNED TO DIRECTORY${NC} /opt/sites/$domain"
-	nohup wget -P /opt/sites --limit-rate=200k --reject pdf --no-clobber --convert-links --random-wait -r -p -E -e robots=off -U mozilla $site_to_clone &
-
-
+	while true; do
+	  echo -e -n "${RED}Do you already have a cloned site (y/n):${NC}"
+	  	read answer
+	  if [ "$answer" == "y" ]; then
+		  echo -e -n "${RED}SITE SHOULD BE UNDER /opt/sites/ DIRECTORY. PROVIDE SITE DIRECTORY NAME:${NC}"
+		  	read site_to_clone
+	    break
+	  elif [ "$answer" == "n" ]; then
+		  echo -e -n "${RED}PROVIDE SITE TO CLONE: ${NC}"
+		  	read site_to_clone
+			echo -e "${RED}SITE WILL BE CLONNED TO DIRECTORY${NC} /opt/sites/$site_to_clone"
+			nohup wget -P /opt/sites --limit-rate=200k --reject pdf --no-clobber --convert-links --random-wait -r -p -E -e robots=off -U mozilla $site_to_clone &
+	    exit
+	  else
+		  echo "Invalid input. Please enter y or n."
+	  fi
+	done
 }
 function fireup(){
 	local urls_rules=""
@@ -92,43 +102,48 @@ function fireup(){
 	config_1+="\tlisten 0.0.0.0:$redirector_port $ssl_nginx_check;\n"
 	config_1+="\tserver_name $domain;\n\n"
 	config_1+="\troot /opt/sites/$clonned_domain/;\n\n"
+	config_1+="\t###########################################;\n"
 	config_1+="\tssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;\n"
 	config_1+="\tssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;\n"
 	config_1+="\tssl_session_cache shared:SSL:1m;\n"
 	config_1+="\tssl_session_timeout 10m;\n"
 	config_1+="\tssl_ciphers HIGH:!aNULL:!MD5;\n"
 	config_1+="\tssl_prefer_server_ciphers on;\n"
+	config_1+="\t###########################################;\n"
 
 	for ip_num in "${!accepted_ips[@]}"; do
 		ip_add="${accepted_ips[$ip_num]}"
 		ips_accept_check+="\tallow $ip_add;\n"
 	done
-		ips_accept_check+="\tdeny all;\n\n"
+	ips_accept_check+="\tdeny all;\n\n"
+	config_1+="\t###########################################;\n"
 
 	for i in "${!obligatory_headers[@]}"; do
 		header="${obligatory_headers[$i]}"
 		value="${obligatory_header_values[$i]}"
 		headers_check_rules+="\t\tif (\$http_$header != \"$value\") {\n"
-		headers_check_rules+="\t\t\treturn 403;\n"
+		headers_check_rules+="\t\t\t  set \$C2_passed \"false\";  \n"
 		headers_check_rules+="\t\t}\n"
 	done
 	for url in "${accepted_urls[@]}"; do
 		urls_rules+="\tlocation = $url {\n"
+		urls_rules+="\t\tset \$C2_passed \"true\";\n"
+
 		urls_rules+="$headers_check_rules"
-		urls_rules+="\t\tproxy_pass $C2_proto://$c2_ip:$c2_port;\n"
-		urls_rules+="\t\tproxy_set_header Host \$host;\n"
-		urls_rules+="\t\tproxy_set_header X-Real-IP \$remote_addr;\n"
-		urls_rules+="\t\tproxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;\n"
-		urls_rules+="\t\tproxy_set_header X-Forwarded-Proto https;\n"
+
+
+		urls_rules+="\t\tif (\$C2_passed = \"true\") {\n"
+		urls_rules+="\t\t\tproxy_pass $C2_proto://$c2_ip:$c2_port;\n"
+		urls_rules+="\t\t}\n"
 		urls_rules+="\t}\n"
+
 	done
 	local resulting_config=""
 	resulting_config+="$config_1"
 	resulting_config+="$ips_accept_check"
 	resulting_config+="$urls_rules"
 	resulting_config+="\tlocation / {\n"
-	resulting_config+="\t\troot /opt/sites/$clonned_domain;\n"
-	resulting_config+="\t\ttry_files \$uri \$uri/index.html =404;\n"
+	resulting_config+="\t\ttry_files \$uri \$uri/ =404; \n"
 	resulting_config+="\t}\n"
 	resulting_config+="}"
 
@@ -272,8 +287,6 @@ function list_redirectors() {
 		done
 	fi
 }
-
-
 function del_redirector() {
 	options=()
 	while IFS= read -r -d '' filename; do
@@ -286,7 +299,7 @@ function del_redirector() {
 	echo -e "${RED}CHOOSE REDIRECTOR TO DELETE:${NC}"
 	select filename in "${options[@]}"; do
 		if [[ -n "$filename" ]]; then
-			echo -e "${RED}ARE YOU SURE YOU WANT TO DELETE ${NC}$filename${RED}? (y/n) ${NC}"
+			echo -e -n "${RED}ARE YOU SURE YOU WANT TO DELETE ${NC}$filename${RED} (y/n): ${NC}"
 			read answer
 			if [[ "$answer" == "y" ]]; then
 				sudo rm "$filename"
