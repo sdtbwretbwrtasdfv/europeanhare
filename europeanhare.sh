@@ -9,7 +9,7 @@ NC='\033[0m'
 if [ -f ./tmp_config ]; then rm tmp_config; fi
 
 function show_banner() {
-  local version="1.0"
+  local version="1.1"
   echo -e "${RED}\n==============================================================================================${NC}"
   local logo="${RED}
   ╔═╗┬ ┬┬─┐┌─┐┌─┐┌─┐┌─┐┌┐┌╦ ╦┌─┐┬─┐┌─┐
@@ -28,6 +28,7 @@ function install_nginx() {
 	if ! dpkg-query -W nginx 2>/dev/null | grep -q "^nginx"; then
 		echo -e "${RED}[+] INSTALLING NGINX...${NC}"
 		apt-get --assume-yes install nginx
+		apt-get --assume-yes install nginx-extras
 	fi
 
 }
@@ -98,6 +99,7 @@ function fireup(){
 	local urls_rules=""
 	local headers_check_rules=""
 	clonned_domain=$(echo $site_to_clone | sed 's/https:\/\///'| sed 's/http:\/\/// ')
+
 	config_1="server {\n"
 	config_1+="\tlisten 0.0.0.0:$redirector_port $ssl_nginx_check;\n"
 	config_1+="\tserver_name $domain;\n\n"
@@ -110,13 +112,24 @@ function fireup(){
 	config_1+="\tssl_ciphers HIGH:!aNULL:!MD5;\n"
 	config_1+="\tssl_prefer_server_ciphers on;\n"
 	config_1+="\t###########################################;\n"
+	config_1+="\tsendfile on;\n"
+	config_1+="\ttcp_nopush on;\n"
+	config_1+="\ttcp_nodelay on;\n"
+	config_1+="\tkeepalive_timeout 65;\n"
+	config_1+="\ttypes_hash_max_size 2048;\n"
+	config_1+="\tserver_tokens off;\n"
+	config_1+="\tmore_set_headers 'Server: Server';\n"
+	config_1+="\tadd_header Referrer-Policy \"no-referrer\";\n"
+	config_1+="\tinclude /etc/nginx/mime.types;\n"
+	config_1+="\tdefault_type text/html;\n\n"
+	config_1+="\t###########################################\n"
 
 	for ip_num in "${!accepted_ips[@]}"; do
 		ip_add="${accepted_ips[$ip_num]}"
 		ips_accept_check+="\tallow $ip_add;\n"
 	done
 	ips_accept_check+="\tdeny all;\n\n"
-	config_1+="\t###########################################;\n"
+	ips_accept_check+="\t###########################################;\n"
 
 	for i in "${!obligatory_headers[@]}"; do
 		header="${obligatory_headers[$i]}"
@@ -128,15 +141,11 @@ function fireup(){
 	for url in "${accepted_urls[@]}"; do
 		urls_rules+="\tlocation = $url {\n"
 		urls_rules+="\t\tset \$C2_passed \"true\";\n"
-
 		urls_rules+="$headers_check_rules"
-
-
 		urls_rules+="\t\tif (\$C2_passed = \"true\") {\n"
 		urls_rules+="\t\t\tproxy_pass $C2_proto://$c2_ip:$c2_port;\n"
 		urls_rules+="\t\t}\n"
 		urls_rules+="\t}\n"
-
 	done
 	local resulting_config=""
 	resulting_config+="$config_1"
